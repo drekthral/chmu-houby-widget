@@ -17,6 +17,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -47,11 +48,13 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
         val data = try {
             withContext(Dispatchers.IO) { ChmuRepository.fetch() }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Stažení mapy selhalo", e)
             if (force) {
                 for ((id, _) in configured) {
-                    updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Nepodařilo se stáhnout data" }
+                    updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Chyba stažení: ${describe(e)}" }
                     HoubyWidget().update(ctx, id)
                 }
             }
@@ -77,9 +80,11 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     it[WidgetKeys.UPDATED_AT] = System.currentTimeMillis()
                     it.remove(WidgetKeys.ERROR)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Zpracování mapy selhalo", e)
-                updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Chyba při čtení mapy" }
+                updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Chyba čtení mapy: ${describe(e)}" }
             }
             HoubyWidget().update(ctx, id)
         }
@@ -96,6 +101,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     }
 
     companion object {
+        private fun describe(e: Throwable) = "${e.javaClass.simpleName}: ${e.message ?: ""}".take(120)
+
         private const val TAG = "HoubyRefresh"
         private const val KEY_FORCE = "force"
         private const val PERIODIC_NAME = "houby-periodic"

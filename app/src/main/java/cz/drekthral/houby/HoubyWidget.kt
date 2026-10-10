@@ -84,6 +84,30 @@ class HoubyWidget : GlanceAppWidget() {
         val dataLabel = prefs[WidgetKeys.DATA_LABEL]
         val error = prefs[WidgetKeys.ERROR]
 
+        // 1×1: jen barva a číslo stupně.
+        if (size.width < 100.dp || size.height < 70.dp) {
+            Column(
+                modifier = GlanceModifier.fillMaxSize().appWidgetBackground().cornerRadius(16.dp)
+                    .background(bg).padding(4.dp)
+                    .clickable(actionRunCallback<RefreshAction>()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = level?.value?.toString() ?: if (error != null) "!" else "…",
+                    style = TextStyle(color = fgProvider, fontSize = 30.sp, fontWeight = FontWeight.Bold),
+                )
+                if (size.height >= 60.dp) {
+                    Text(
+                        text = level?.label ?: if (error != null) "chyba" else "",
+                        style = TextStyle(color = fgProvider, fontSize = 10.sp),
+                        maxLines = 1,
+                    )
+                }
+            }
+            return
+        }
+
         Column(
             modifier = GlanceModifier.fillMaxSize().appWidgetBackground().cornerRadius(16.dp)
                 .background(bg).padding(10.dp)
@@ -108,7 +132,7 @@ class HoubyWidget : GlanceAppWidget() {
                     Text(
                         text = error ?: dataLabel?.let { "mapa: $it" } ?: "",
                         style = TextStyle(color = fgProvider, fontSize = 11.sp),
-                        maxLines = 1,
+                        maxLines = if (error != null) 3 else 1,
                     )
                 }
             }
