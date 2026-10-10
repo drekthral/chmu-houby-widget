@@ -4,6 +4,9 @@ import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -60,6 +63,7 @@ import kotlinx.coroutines.withContext
 class ConfigActivity : ComponentActivity() {
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
+    private var saving by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,7 +78,7 @@ class ConfigActivity : ComponentActivity() {
                     if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
                         InfoScreen()
                     } else {
-                        SearchScreen(onPick = ::savePlace)
+                        SearchScreen(onPick = ::savePlace, saving = saving)
                     }
                 }
             }
@@ -84,6 +88,8 @@ class ConfigActivity : ComponentActivity() {
     private fun resultIntent() = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
 
     private fun savePlace(place: Geocoder.Place) {
+        if (saving) return
+        saving = true
         lifecycleScope.launch {
             val glanceId = GlanceAppWidgetManager(this@ConfigActivity).getGlanceIdBy(appWidgetId)
             updateAppWidgetState(this@ConfigActivity, glanceId) {
@@ -97,7 +103,15 @@ class ConfigActivity : ComponentActivity() {
             }
             HoubyWidget().update(this@ConfigActivity, glanceId)
             RefreshWorker.ensurePeriodic(this@ConfigActivity)
-            RefreshWorker.refreshNow(this@ConfigActivity)
+            // První stažení v popředí – na pozadí může mít aplikace síť omezenou.
+            val outcome = WidgetUpdater.refresh(this@ConfigActivity, reportError = true)
+            if (outcome is WidgetUpdater.Outcome.Failed) {
+                Toast.makeText(
+                    this@ConfigActivity,
+                    WidgetUpdater.errorMessage(this@ConfigActivity, outcome.error),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
             setResult(RESULT_OK, resultIntent())
             finish()
         }
@@ -119,6 +133,12 @@ private fun AppTheme(content: @Composable () -> Unit) {
 
 @Composable
 private fun InfoScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val restriction = remember { WidgetUpdater.backgroundRestriction(context) }
+
     Column(
         modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -131,7 +151,51 @@ private fun InfoScreen() {
                 "ukáže pravděpodobnost růstu hub. Klepnutím na widget data obnovíš.",
             style = MaterialTheme.typography.bodyLarge,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
+        Text(
+            if (restriction == null) "Data na pozadí: povolena"
+            else "Data na pozadí: blokována ($restriction). Widget se sám neobnoví – " +
+                "povol aplikaci neomezená data (tlačítko níže).",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (restriction == null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row {
+            Button(
+                enabled = !testing,
+                onClick = {
+                    testing = true
+                    result = null
+                    scope.launch {
+                        result = when (val o = WidgetUpdater.refresh(context, reportError = true)) {
+                            is WidgetUpdater.Outcome.Updated -> "OK – mapa ČHMÚ ze dne ${o.timeLabel}, widgety aktualizovány."
+                            is WidgetUpdater.Outcome.Failed -> "Chyba: ${WidgetUpdater.describe(o.error)}"
+                            else -> try {
+                                val d = withContext(Dispatchers.IO) { ChmuRepository.fetch() }
+                                "OK – mapa ČHMÚ ze dne ${d.timeLabel} (žádný widget zatím není přidaný)."
+                            } catch (e: Exception) {
+                                "Chyba: ${WidgetUpdater.describe(e)}"
+                            }
+                        }
+                        testing = false
+                    }
+                },
+            ) { Text(if (testing) "Stahuji…" else "Obnovit / otestovat") }
+            Spacer(Modifier.padding(4.dp))
+            Button(onClick = {
+                val pkg = Uri.fromParts("package", context.packageName, null)
+                try {
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS, pkg))
+                } catch (e: android.content.ActivityNotFoundException) {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
+                }
+            }) { Text("Povolit data na pozadí") }
+        }
+        result?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(Modifier.height(16.dp))
         Text(
             "Zdroj dat: ČHMÚ, mapa Pravděpodobnost růstu hub (CC BY 4.0). Vyhledávání obcí: © OpenStreetMap.",
             style = MaterialTheme.typography.bodySmall,
@@ -140,7 +204,7 @@ private fun InfoScreen() {
 }
 
 @Composable
-private fun SearchScreen(onPick: (Geocoder.Place) -> Unit) {
+private fun SearchScreen(onPick: (Geocoder.Place) -> Unit, saving: Boolean) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Geocoder.Place>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -182,7 +246,8 @@ private fun SearchScreen(onPick: (Geocoder.Place) -> Unit) {
             Button(onClick = { search() }, enabled = !loading) { Text("Hledat") }
         }
         Spacer(Modifier.height(12.dp))
-        if (loading) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        if (saving) Text("Stahuji mapu ČHMÚ…", style = MaterialTheme.typography.bodyMedium)
+        if (loading || saving) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
         message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
             items(results) { place ->

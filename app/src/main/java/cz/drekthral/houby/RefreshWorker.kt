@@ -1,12 +1,7 @@
 package cz.drekthral.houby
 
 import android.content.Context
-import android.util.Log
 import androidx.datastore.preferences.core.Preferences
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.state.getAppWidgetState
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -17,10 +12,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
@@ -37,56 +28,15 @@ import java.util.concurrent.TimeUnit
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val ctx = applicationContext
         val force = inputData.getBoolean(KEY_FORCE, false)
-        val ids = GlanceAppWidgetManager(ctx).getGlanceIds(HoubyWidget::class.java)
-        val configured = ids.map { it to getAppWidgetState(ctx, PreferencesGlanceStateDefinition, it) }
-            .filter { (_, prefs) -> prefs[WidgetKeys.LAT] != null }
-        if (configured.isEmpty()) return Result.success()
-
-        if (!force && !shouldFetch(configured.map { it.second })) return Result.success()
-
-        val data = try {
-            withContext(Dispatchers.IO) { ChmuRepository.fetch() }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Stažení mapy selhalo", e)
-            if (force) {
-                for ((id, _) in configured) {
-                    updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Chyba stažení: ${describe(e)}" }
-                    HoubyWidget().update(ctx, id)
-                }
-            }
-            // Periodický běh to zkusí znovu za 30 minut, ruční obnovu zopakuje WorkManager.
-            return if (force && e is IOException && runAttemptCount < 3) Result.retry() else Result.success()
-        }
-
-        for ((id, prefs) in configured) {
-            val lat = prefs[WidgetKeys.LAT]!!
-            val lon = prefs[WidgetKeys.LON]!!
-            val appWidgetId = GlanceAppWidgetManager(ctx).getAppWidgetId(id)
-            try {
-                val sample = withContext(Dispatchers.Default) { ChmuRepository.sample(data.png, lat, lon) }
-                val file = File(ctx.filesDir, "crop_$appWidgetId.png")
-                withContext(Dispatchers.IO) {
-                    file.outputStream().use { sample.crop.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                }
-                sample.crop.recycle()
-                updateAppWidgetState(ctx, id) {
-                    it[WidgetKeys.LEVEL] = sample.level?.value ?: 0
-                    it[WidgetKeys.DATA_LABEL] = data.timeLabel
-                    it[WidgetKeys.CROP_PATH] = file.absolutePath
-                    it[WidgetKeys.UPDATED_AT] = System.currentTimeMillis()
-                    it.remove(WidgetKeys.ERROR)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Zpracování mapy selhalo", e)
-                updateAppWidgetState(ctx, id) { it[WidgetKeys.ERROR] = "Chyba čtení mapy: ${describe(e)}" }
-            }
-            HoubyWidget().update(ctx, id)
+        val outcome = WidgetUpdater.refresh(
+            applicationContext,
+            reportError = force,
+            shouldFetch = if (force) null else ::shouldFetch,
+        )
+        // Periodický běh to zkusí znovu za 30 minut, ruční obnovu zopakuje WorkManager.
+        if (force && outcome is WidgetUpdater.Outcome.Failed && outcome.error is IOException && runAttemptCount < 3) {
+            return Result.retry()
         }
         return Result.success()
     }
@@ -101,9 +51,6 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     }
 
     companion object {
-        private fun describe(e: Throwable) = "${e.javaClass.simpleName}: ${e.message ?: ""}".take(120)
-
-        private const val TAG = "HoubyRefresh"
         private const val KEY_FORCE = "force"
         private const val PERIODIC_NAME = "houby-periodic"
         private const val NOW_NAME = "houby-now"
