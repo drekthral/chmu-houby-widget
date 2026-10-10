@@ -51,10 +51,10 @@ class WidgetRefreshTest {
         RefreshWorker.refreshNow(ctx)
 
         var state: Preferences? = null
-        repeat(60) {
+        for (i in 1..60) {
             delay(1000)
             state = getAppWidgetState(ctx, PreferencesGlanceStateDefinition, glanceId)
-            if (state!![WidgetKeys.DATA_LABEL] != null || state!![WidgetKeys.ERROR] != null) return@repeat
+            if (state!![WidgetKeys.DATA_LABEL] != null || state!![WidgetKeys.ERROR] != null) break
         }
         Log.i("HoubyTest", "widget state = $state")
         try {
