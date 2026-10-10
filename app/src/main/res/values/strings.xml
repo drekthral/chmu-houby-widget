@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Houby ČHMÚ</string>
+    <string name="widget_description">Pravděpodobnost růstu hub podle mapy ČHMÚ pro vybrané místo</string>
+</resources>
