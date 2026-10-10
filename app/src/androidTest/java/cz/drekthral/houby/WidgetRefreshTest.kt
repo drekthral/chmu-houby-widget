@@ -26,19 +26,10 @@ import org.junit.runner.RunWith
 class WidgetRefreshTest {
 
     @Test
-    fun refreshFillsWidgetState() = runBlocking {
+    fun refreshFillsWidgetState(): Unit = runBlocking {
         val instr = InstrumentationRegistry.getInstrumentation()
         val ctx = instr.targetContext
-        val out = android.os.ParcelFileDescriptor.AutoCloseInputStream(
-            instr.uiAutomation.executeShellCommand("appwidget grantbind --package ${ctx.packageName} --user 0")
-        ).bufferedReader().readText()
-        Log.i("HoubyTest", "grantbind: $out")
-
-        val host = AppWidgetHost(ctx, 4242)
-        val appWidgetId = host.allocateAppWidgetId()
-        val bound = AppWidgetManager.getInstance(ctx)
-            .bindAppWidgetIdIfAllowed(appWidgetId, ComponentName(ctx, HoubyWidgetReceiver::class.java))
-        assertTrue("widget se nepodařilo vytvořit", bound)
+        val (host, appWidgetId) = TestWidgets.bind(4242)
 
         val glanceId = GlanceAppWidgetManager(ctx).getGlanceIdBy(appWidgetId)
         updateAppWidgetState(ctx, glanceId) {

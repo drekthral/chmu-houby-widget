@@ -24,12 +24,10 @@ class DataSaverDiagnosticTest {
     private val instr = InstrumentationRegistry.getInstrumentation()
     private val ctx = instr.targetContext
 
-    private fun sh(cmd: String): String = ParcelFileDescriptor.AutoCloseInputStream(
-        instr.uiAutomation.executeShellCommand(cmd)
-    ).bufferedReader().readText().trim().also { Log.i("HoubyTest", "$ $cmd -> $it") }
+    private fun sh(cmd: String) = TestWidgets.sh(cmd)
 
     @Test
-    fun dataSaverScenarios() = runBlocking {
+    fun dataSaverScenarios(): Unit = runBlocking {
         val uid = ctx.applicationInfo.uid
         sh("svc wifi disable")
         sh("svc data enable")
@@ -38,11 +36,7 @@ class DataSaverDiagnosticTest {
         Log.i("HoubyTest", "metered=${cm.isActiveNetworkMetered} importance=" +
             ActivityManager.RunningAppProcessInfo().also { ActivityManager.getMyMemoryState(it) }.importance)
 
-        sh("appwidget grantbind --package ${ctx.packageName} --user 0")
-        val host = AppWidgetHost(ctx, 4343)
-        val appWidgetId = host.allocateAppWidgetId()
-        AppWidgetManager.getInstance(ctx)
-            .bindAppWidgetIdIfAllowed(appWidgetId, ComponentName(ctx, HoubyWidgetReceiver::class.java))
+        val (host, appWidgetId) = TestWidgets.bind(4343)
         val glanceId = GlanceAppWidgetManager(ctx).getGlanceIdBy(appWidgetId)
 
         suspend fun scenario(name: String) {
