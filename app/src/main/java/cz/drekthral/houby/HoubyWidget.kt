@@ -44,7 +44,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import androidx.glance.layout.defaultWeight
 import java.io.File
 
 class HoubyWidget : GlanceAppWidget() {
