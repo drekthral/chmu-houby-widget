@@ -14,14 +14,11 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
-import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
@@ -89,7 +86,7 @@ class HoubyWidget : GlanceAppWidget() {
             Column(
                 modifier = GlanceModifier.fillMaxSize().appWidgetBackground().cornerRadius(16.dp)
                     .background(bg).padding(4.dp)
-                    .clickable(actionRunCallback<RefreshAction>()),
+                    .clickable(actionStartActivity<RefreshActivity>()),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -111,7 +108,7 @@ class HoubyWidget : GlanceAppWidget() {
         Column(
             modifier = GlanceModifier.fillMaxSize().appWidgetBackground().cornerRadius(16.dp)
                 .background(bg).padding(10.dp)
-                .clickable(actionRunCallback<RefreshAction>()),
+                .clickable(actionStartActivity<RefreshActivity>()),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = GlanceModifier.fillMaxWidth()) {
                 Text(
@@ -151,13 +148,6 @@ class HoubyWidget : GlanceAppWidget() {
                 }
             }
         }
-    }
-}
-
-/** Klepnutí na widget = okamžitá obnova dat. */
-class RefreshAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        RefreshWorker.refreshNow(context)
     }
 }
 
