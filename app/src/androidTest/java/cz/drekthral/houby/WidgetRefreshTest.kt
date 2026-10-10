@@ -29,7 +29,10 @@ class WidgetRefreshTest {
     fun refreshFillsWidgetState() = runBlocking {
         val instr = InstrumentationRegistry.getInstrumentation()
         val ctx = instr.targetContext
-        instr.uiAutomation.executeShellCommand("appwidget grantbind --package ${ctx.packageName}").close()
+        val out = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            instr.uiAutomation.executeShellCommand("appwidget grantbind --package ${ctx.packageName} --user 0")
+        ).bufferedReader().readText()
+        Log.i("HoubyTest", "grantbind: $out")
 
         val host = AppWidgetHost(ctx, 4242)
         val appWidgetId = host.allocateAppWidgetId()
